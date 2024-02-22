@@ -1,0 +1,14 @@
+tmp/slc7_amd64_gcc10/MakeData/DirCache.mk:22: No such file exists: src/AODAnalyzer/AODAnalyzer/test/test_catch2_*.cc. Please fix src/AODAnalyzer/AODAnalyzer/test/BuildFile.
+>> Local Products Rules ..... started
+>> Local Products Rules ..... done
+>> Subsystem BigProducts built
+>> Building CMSSW version CMSSW_12_4_4 ----
+>> Entering Package AODAnalyzer/AODAnalyzer
+>> Creating project symlinks
+>> Building  edm plugin tmp/slc7_amd64_gcc10/src/AODAnalyzer/AODAnalyzer/plugins/AODAnalyzerAODAnalyzerAuto/libAODAnalyzerAODAnalyzerAuto.so
+/cvmfs/cms.cern.ch/slc7_amd64_gcc10/external/gcc/10.3.0-84898dea653199466402e67d73657f10/bin/../lib/gcc/x86_64-unknown-linux-gnu/10.3.0/../../../../x86_64-unknown-linux-gnu/bin/ld: tmp/slc7_amd64_gcc10/src/AODAnalyzer/AODAnalyzer/plugins/AODAnalyzerAODAnalyzerAuto/AODAnalyzer.cc.o: in function `AODAnalyzer::Match(AODAnalyzer::GENPART, std::vector<reco::GenJet, std::allocator<reco::GenJet> > const&)':
+AODAnalyzer.cc:(.text+0x102e): undefined reference to `vtable for TLorentzVector'
+/cvmfs/cms.cern.ch/slc7_amd64_gcc10/external/gcc/10.3.0-84898dea653199466402e67d73657f10/bin/../lib/gcc/x86_64-unknown-linux-gnu/10.3.0/../../../../x86_64-unknown-linux-gnu/bin/ld: AODAnalyzer.cc:(.text+0x1076): undefined reference to `vtable for TVector3'
+collect2: error: ld returned 1 exit status
+gmake: *** [config/SCRAM/GMake/Makefile.rules:1719: tmp/slc7_amd64_gcc10/src/AODAnalyzer/AODAnalyzer/plugins/AODAnalyzerAODAnalyzerAuto/libAODAnalyzerAODAnalyzerAuto.so] Error 1
+gmake: *** [There are compilation/build errors. Please see the detail log above.] Error 2

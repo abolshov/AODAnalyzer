@@ -49,8 +49,8 @@ class AODAnalyzer : public edm::one::EDAnalyzer<>
 		inline bool ValidSignal() const noexcept { return std::none_of(m_signal.begin(), m_signal.end(), [](reco::Candidate const* p) { return p == nullptr; }); }
 		bool FindSignal(reco::GenParticleCollection const& genpart);
 		int Match(GENPART target, std::vector<reco::GenJet> const& genjets);
-		std::list<TLorentzVector> FindStableParticles(reco::GenParticleCollection const& genpart);
-		std::vector<TLorentzVector> ClusterAK4(std::vector<TLorentzVector> stable);
+		std::vector<reco::Candidate*> FindStableParticles(reco::GenParticleCollection const& genpart);
+		std::vector<TLorentzVector> ClusterAK4(std::vector<reco::Candidate*> const& stable);
 };
 
 std::ofstream AODAnalyzer::m_file("debug.csv");
@@ -75,12 +75,6 @@ AODAnalyzer::~AODAnalyzer()
 	{
 		delete p_jet;
 	}
-
-	// for (auto& p_stable: m_stable_particles)
-	// {
-	// 	delete p_stable;
-	// }
-	
 }
 
 
@@ -405,36 +399,100 @@ int AODAnalyzer::Match(GENPART target, std::vector<reco::GenJet> const& genjets)
 	return best_match;
 }
 
-std::vector<TLorentzVector> AODAnalyzer::FindStableParticles(reco::GenParticleCollection const& genpart)
+std::vector<reco::Candidate*> AODAnalyzer::FindStableParticles(reco::GenParticleCollection const& genpart)
 {
 	int sz = genpart.size();
-	std::list<TLorentzVector> res;
-	// std::cout << "FindStableParticles: size = " << sz << "\n";
+	std::vector<reco::Candidate*> res;
 	for (int i = 0; i < sz; ++i)
 	{
 		int abs_id = std::abs(genpart[i].pdgId()); 
 		// if no daughters or not neutrino
 		if (genpart[i].numberOfDaughters() == 0 && (abs_id != 12 || abs_id != 14 || abs_id != 16))
 		{
-			// std::cout << "Adding " << abs_id << "\n";
-			TLorentzVector p(genpart[i].px(), genpart[i].py(), genpart[i].pz(), genpart[i].energy());
-			res.push_back(p);
+			res.push_back(genpart[i].clone());
 		}
 	}
 	return res;
 }
 
-std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<TLorentzVector> stable)
+std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<reco::Candidate*> const& stable)
 {
-	std::vector<std::pair<int, double>> dist_to_beam;
+	std::vector<TLorentzVector> res;
+
+	auto d_ij = [](TLorentzVector const& pi, TLorentzVector const& pj)
+	{
+		return std::min(1/(pi.Pt()*pi.Pt()), 1/(pj.Pt()*pj.Pt()))*(pi.DeltaR(pj)*pi.DeltaR(pj))/(0.4*0.4);
+	};
+
 	int sz = stable.size();
+	std::vector<TLorentzVector> p4;
+	p4.reserve(sz);
 	for (int i = 0; i < sz; ++i)
 	{
-		double d_iB = 1/(stable[i].Pt()*stable[i].Pt());
-		dist_to_beam.push_back({i, d_iB});
+		TLorentzVector pi(stable[i]->px(), stable[i]->py(), stable[i]->pz(), stable[i]->energy());
+		p4.push_back(pi);
 	}
 
-	
+	// TLorentzVector jet;
+	while (!stable.empty())
+	{
+		// double min_d_iB = 1/(stable[0]->pt()*stable[0]->pt());
+		double min_d_iB = 1/(p4[0].Pt()*p4[0].Pt());
+		int min_iB = 0;
+
+		// TLorentzVector pi(stable[0]->px(), stable[0]->py(), stable[0]->pz(), stable[0]->energy());
+		// TLorentzVector pj(stable[1]->px(), stable[1]->py(), stable[1]->pz(), stable[1]->energy());
+		// double min_d_ij = d_ij(pi, pj);
+		double min_d_ij = d_ij(p4[0], p4[1]);
+		int min_i = 0;
+		int min_j = 0;
+		for (int i = 1; i < sz; ++i)
+		{
+			double d_iB = 1/(p4[i].Pt()*p4[i].Pt());
+			if (d_iB < min_d_iB)
+			{
+				min_d_iB = d_iB;
+				min_iB = i;
+			}
+
+			for (int j = i + 1; j < sz; ++j)
+			{
+				double cur_d_ij = d_ij(p4[i], p4[j]);
+				if (cur_d_ij < min_d_ij)
+				{
+					min_d_ij = cur_d_ij;
+					min_i = i;
+					min_j = j;
+				}
+			}
+		}
+
+		std::cout << "min d_iB: min_iB = " << min_iB << ", pt = " << p4[min_iB].Pt() << "\n";
+
+		std::cout << "min d_ij: min_i = " << min_i << ", min_j = " << min_j  
+				  << ", pt_i = " << p4[min_i].Pt() << ", pt_j = " << p4[min_j].Pt() << "\n";
+
+		if (min_d_ij < min_d_iB)
+		{
+			std::cout << "\tmerge " << stable[min_i]->pdgId() << " and " << stable[min_j]->pdgId() << " to single jet\n";
+			
+			int keep = std::min(min_i, min_j);
+			int remove = std::max(min_i, min_j);
+			p4[keep] += p4[remove];
+			auto itr = p4.begin() + remove;
+			p4.erase(itr);
+
+			// combine i and j to min(i, j)
+			// remove max(i, j)
+		}
+		else
+		{
+			std::cout << "\tdecalre " << min_iB << " as jet with energy " << p4[min_iB].E() << "\n";
+			// jet += TLorentzVector(stable[min_iB]->px(), stable[min_iB]->py(), stable[min_iB]->pz(), stable[min_iB]->energy());
+		}
+
+	}
+	return res;
 }
 
 //define this as a plug-in

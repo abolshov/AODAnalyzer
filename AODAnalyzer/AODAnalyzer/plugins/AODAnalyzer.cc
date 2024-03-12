@@ -4,7 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <fstream>
-#include <list>
+#include <iomanip>
 
 // user include files
 #include "FWCore/Framework/interface/Frameworkfwd.h"
@@ -49,8 +49,10 @@ class AODAnalyzer : public edm::one::EDAnalyzer<>
 		inline bool ValidSignal() const noexcept { return std::none_of(m_signal.begin(), m_signal.end(), [](reco::Candidate const* p) { return p == nullptr; }); }
 		bool FindSignal(reco::GenParticleCollection const& genpart);
 		int Match(GENPART target, std::vector<reco::GenJet> const& genjets);
-		std::vector<reco::Candidate*> FindStableParticles(reco::GenParticleCollection const& genpart);
-		std::vector<TLorentzVector> ClusterAK4(std::vector<reco::Candidate*> const& stable);
+		// std::vector<reco::Candidate*> FindStableParticles(reco::GenParticleCollection const& genpart);
+		std::vector<std::pair<int, TLorentzVector>> FindStableParticles(reco::GenParticleCollection const& genpart);
+		// std::vector<TLorentzVector> ClusterAK4(std::vector<reco::Candidate*> const& stable);
+		std::vector<TLorentzVector> ClusterAK4(std::vector<std::pair<int, TLorentzVector>> const& stable);
 };
 
 std::ofstream AODAnalyzer::m_file("debug.csv");
@@ -81,6 +83,7 @@ AODAnalyzer::~AODAnalyzer()
 void AODAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) 
 {
 	std::cout << "analyze\n";
+	std::cout << std::setprecision(3);
 	edm::Handle<reco::GenParticleCollection> genpart_handle;
 	iEvent.getByToken(m_genpart_token, genpart_handle);
   	edm::Handle<std::vector<reco::GenJet>> genjet_handle;
@@ -234,6 +237,17 @@ void AODAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 
 		auto stable = FindStableParticles(genpart);
 		std::cout << "\tFound " << stable.size() << " stable particles\n";
+		auto jets = ClusterAK4(stable);
+		std::cout << "\tClustered " << jets.size() << " jets:\n";
+		for (auto& jet: jets)
+		{
+			std::cout << jet.E() << "\n";
+		}
+		std::cout << "\nBuilt-in " << genjet.size() << " jets:\n";
+		for (auto& jet: genjet)
+		{
+			std::cout << jet.energy() << "\n";
+		}
 	}
 }
 
@@ -399,26 +413,28 @@ int AODAnalyzer::Match(GENPART target, std::vector<reco::GenJet> const& genjets)
 	return best_match;
 }
 
-std::vector<reco::Candidate*> AODAnalyzer::FindStableParticles(reco::GenParticleCollection const& genpart)
+std::vector<std::pair<int, TLorentzVector>> AODAnalyzer::FindStableParticles(reco::GenParticleCollection const& genpart)
 {
 	int sz = genpart.size();
-	std::vector<reco::Candidate*> res;
+	std::vector<std::pair<int, TLorentzVector>> res;
 	for (int i = 0; i < sz; ++i)
 	{
 		int abs_id = std::abs(genpart[i].pdgId()); 
 		// if no daughters or not neutrino
 		if (genpart[i].numberOfDaughters() == 0 && (abs_id != 12 || abs_id != 14 || abs_id != 16))
 		{
-			res.push_back(genpart[i].clone());
+			TLorentzVector p(genpart[i].px(), genpart[i].py(), genpart[i].pz(), genpart[i].energy());
+			int pdg_id = genpart[i].pdgId();
+			res.push_back({pdg_id, p});
 		}
 	}
 	return res;
 }
 
-std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<reco::Candidate*> const& stable)
+std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<std::pair<int, TLorentzVector>> const& stable)
 {
+	// std::cout << "ClusterAK4\n";
 	std::vector<TLorentzVector> res;
-
 	auto d_ij = [](TLorentzVector const& pi, TLorentzVector const& pj)
 	{
 		return std::min(1/(pi.Pt()*pi.Pt()), 1/(pj.Pt()*pj.Pt()))*(pi.DeltaR(pj)*pi.DeltaR(pj))/(0.4*0.4);
@@ -426,27 +442,33 @@ std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<reco::Candidate*
 
 	int sz = stable.size();
 	std::vector<TLorentzVector> p4;
+	std::vector<int> id;
+	id.reserve(sz);
 	p4.reserve(sz);
 	for (int i = 0; i < sz; ++i)
 	{
-		TLorentzVector pi(stable[i]->px(), stable[i]->py(), stable[i]->pz(), stable[i]->energy());
-		p4.push_back(pi);
+		auto& [pid, p] = stable[i];
+		p4.push_back(p);
+		id.push_back(pid);
 	}
 
-	// TLorentzVector jet;
-	while (!stable.empty())
+	while (!p4.empty())
 	{
-		// double min_d_iB = 1/(stable[0]->pt()*stable[0]->pt());
+		int cur_size = p4.size();
+		if (cur_size == 1)
+		{
+			res.push_back(p4[0]);
+			break;
+		}
+
 		double min_d_iB = 1/(p4[0].Pt()*p4[0].Pt());
 		int min_iB = 0;
 
-		// TLorentzVector pi(stable[0]->px(), stable[0]->py(), stable[0]->pz(), stable[0]->energy());
-		// TLorentzVector pj(stable[1]->px(), stable[1]->py(), stable[1]->pz(), stable[1]->energy());
-		// double min_d_ij = d_ij(pi, pj);
 		double min_d_ij = d_ij(p4[0], p4[1]);
 		int min_i = 0;
 		int min_j = 0;
-		for (int i = 1; i < sz; ++i)
+
+		for (int i = 1; i < cur_size; ++i)
 		{
 			double d_iB = 1/(p4[i].Pt()*p4[i].Pt());
 			if (d_iB < min_d_iB)
@@ -455,7 +477,7 @@ std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<reco::Candidate*
 				min_iB = i;
 			}
 
-			for (int j = i + 1; j < sz; ++j)
+			for (int j = i + 1; j < cur_size; ++j)
 			{
 				double cur_d_ij = d_ij(p4[i], p4[j]);
 				if (cur_d_ij < min_d_ij)
@@ -467,30 +489,48 @@ std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<reco::Candidate*
 			}
 		}
 
-		std::cout << "min d_iB: min_iB = " << min_iB << ", pt = " << p4[min_iB].Pt() << "\n";
+		std::cout << "min d_iB = " << min_d_iB 
+				  << ":\n\tat = " << min_iB << ", pdgId = " << id[min_iB] << ", pt = " << p4[min_iB].Pt() << "\n";
 
-		std::cout << "min d_ij: min_i = " << min_i << ", min_j = " << min_j  
-				  << ", pt_i = " << p4[min_i].Pt() << ", pt_j = " << p4[min_j].Pt() << "\n";
+		std::cout << "min d_ij = " << min_d_ij
+				  << ":\n\tat (" << min_i << ", " << min_j << "), pdgId = (" << id[min_i] << ", " << id[min_j] << "), "
+				  << "pt = (" << p4[min_i].Pt() << ", " << p4[min_j].Pt() << ")\n";
 
 		if (min_d_ij < min_d_iB)
 		{
-			std::cout << "\tmerge " << stable[min_i]->pdgId() << " and " << stable[min_j]->pdgId() << " to single jet\n";
+			std::cout << "\tmerge " << id[min_i] << " and " << id[min_j] << " to single jet\n\n";
 			
 			int keep = std::min(min_i, min_j);
 			int remove = std::max(min_i, min_j);
 			p4[keep] += p4[remove];
-			auto itr = p4.begin() + remove;
-			p4.erase(itr);
+			auto itr_p4 = p4.begin() + remove;
+			p4.erase(itr_p4);
+			id[keep] = -1;
+			auto itr_id = id.begin() + remove;
+			id.erase(itr_id);
 
 			// combine i and j to min(i, j)
 			// remove max(i, j)
 		}
 		else
 		{
-			std::cout << "\tdecalre " << min_iB << " as jet with energy " << p4[min_iB].E() << "\n";
-			// jet += TLorentzVector(stable[min_iB]->px(), stable[min_iB]->py(), stable[min_iB]->pz(), stable[min_iB]->energy());
+			if (p4[min_iB].E() < 25.0)
+			{
+				std::cout << "\tdrop " << min_iB << " as energy is too small\n\n";
+				auto itr_p4 = p4.begin() + min_iB;
+				auto itr_id = id.begin() + min_iB;
+				p4.erase(itr_p4);
+				id.erase(itr_id);
+				continue;
+			}
+			std::cout << "\tdecalre " << min_iB << " as jet with energy " << p4[min_iB].E() << "\n\n";
+			res.push_back(p4[min_iB]);
+			auto itr_p4 = p4.begin() + min_iB;
+			p4.erase(itr_p4);
+			auto itr_id = id.begin() + min_iB;
+			id.erase(itr_id);
+			std::cout << "==========================================\n";
 		}
-
 	}
 	return res;
 }

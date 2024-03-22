@@ -43,19 +43,20 @@ class AODAnalyzer : public edm::one::EDAnalyzer<>
 		std::vector<reco::Candidate*> m_signal;
 		std::vector<reco::Candidate*> m_matched_jets;
 		double m_dr_thresh = 0.4;
+		static int m_event;
 
 		// std::vector<TLorentzVector> m_stable_particles;
 
 		inline bool ValidSignal() const noexcept { return std::none_of(m_signal.begin(), m_signal.end(), [](reco::Candidate const* p) { return p == nullptr; }); }
 		bool FindSignal(reco::GenParticleCollection const& genpart);
 		int Match(GENPART target, std::vector<reco::GenJet> const& genjets);
-		// std::vector<reco::Candidate*> FindStableParticles(reco::GenParticleCollection const& genpart);
 		std::vector<std::pair<int, TLorentzVector>> FindStableParticles(reco::GenParticleCollection const& genpart);
-		// std::vector<TLorentzVector> ClusterAK4(std::vector<reco::Candidate*> const& stable);
 		std::vector<TLorentzVector> ClusterAK4(std::vector<std::pair<int, TLorentzVector>> const& stable);
 };
 
+// static variables initialization
 std::ofstream AODAnalyzer::m_file("debug.csv");
+int AODAnalyzer::m_event = 1;
 
 AODAnalyzer::AODAnalyzer(const edm::ParameterSet& iConfig)
     : m_genpart_token(consumes<reco::GenParticleCollection>(iConfig.getUntrackedParameter<edm::InputTag>("genparticles"))),
@@ -82,7 +83,8 @@ AODAnalyzer::~AODAnalyzer()
 
 void AODAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) 
 {
-	std::cout << "analyze\n";
+	std::cout << "analyze event " << m_event << "\n";
+	++m_event;
 	std::cout << std::setprecision(3);
 	edm::Handle<reco::GenParticleCollection> genpart_handle;
 	iEvent.getByToken(m_genpart_token, genpart_handle);
@@ -132,121 +134,79 @@ void AODAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 		int bbar_idx = static_cast<int>(GENPART::bbar);
 		reco::Candidate const* ptr_bbar = m_signal[bbar_idx];
 		TLorentzVector bbar(ptr_bbar->px(), ptr_bbar->py(), ptr_bbar->pz(), ptr_bbar->energy());
-
-		double quark_1_cone = 0;
-		for (auto const& part: genpart)
-		{
-			if (part.numberOfDaughters() == 0)
-			{
-				TLorentzVector p4part(part.px(), part.py(), part.pz(), part.energy());
-				double dR = q1.DeltaR(p4part);
-				if (dR < 0.4)
-				{
-					// std::cout << "\t\t addidng " << part.pdgId() << " with energy " << p4part.E() << "\n";
-					quark_1_cone += p4part.E();
-				}
-			}
-		}
-
-		double quark_2_cone = 0;
-		for (auto const& part: genpart)
-		{
-			if (part.numberOfDaughters() == 0)
-			{
-				TLorentzVector p4part(part.px(), part.py(), part.pz(), part.energy());
-				double dR = q2.DeltaR(p4part);
-				if (dR < 0.4) quark_2_cone += p4part.E();
-			}				
-		}
-
-		std::cout << "\t quark 1 energy = " << q1.E() << "\n";
-		std::cout << "\t quark 2 energy = " << q2.E() << "\n";
-		std::cout << "\t dR(q1, q2) = " << q1.DeltaR(q2) << "\n";
-		std::cout << "\t W hadronic energy = " << w_had.E() << "\n";
-		std::cout << "\t W leptonic energy = " << w_lep.E() << "\n";
-		std::cout << "\t lepton energy = " << lep.E() << "\n";
-		std::cout << "\t neutrino energy = " << nu.E() << "\n";
-		std::cout << "\t quark_1_cone = " << quark_1_cone << "\n";
-		std::cout << "\t quark_2_cone = " << quark_2_cone << "\n";
-		std::cout << "\t dR(q1, l) = " << q1.DeltaR(lep) << "\n";
-		std::cout << "\t dR(q2, l) = " << q2.DeltaR(lep) << "\n";
-		std::cout << "\t dR(q1, nu) = " << q1.DeltaR(nu) << "\n";
-		std::cout << "\t dR(q2, nu) = " << q2.DeltaR(nu) << "\n";
-		std::cout << "\t dR(q1, b) = " << q1.DeltaR(b) << "\n";
-		std::cout << "\t dR(q1, bbar) = " << q1.DeltaR(bbar) << "\n";
-		std::cout << "\t dR(q2, b) = " << q2.DeltaR(b) << "\n";
-		std::cout << "\t dR(q2, bbar) = " << q2.DeltaR(bbar) << "\n";
-
-		if (q1_match != -1) 
-		{
-			TLorentzVector j1(genjet[q1_match].px(), genjet[q1_match].py(), genjet[q1_match].pz(), genjet[q1_match].energy());
-			std::cout << "\t matched jet 1 energy = " << genjet[q1_match].energy() << ", dR(j1, q1) = " << j1.DeltaR(q1) << "\n";
-			double jet_1_cone = 0;
-			for (auto const& part: genpart)
-			{
-				if (part.numberOfDaughters() == 0)
-				{
-					TLorentzVector p4part(part.px(), part.py(), part.pz(), part.energy());
-					double dR = j1.DeltaR(p4part);
-					if (dR < 0.4)
-					{
-						jet_1_cone += p4part.E();
-					}
-				}
-			}
-			std::cout << "\t dR(j1, l) = " << j1.DeltaR(lep) << ", ";
-			std::cout << "jet_1_cone = " << jet_1_cone << "\n";
-			std::cout << "\t dR(j1, nu) = " << j1.DeltaR(nu) << "\n";
-		}
-		if (q2_match != -1)
-		{
-			TLorentzVector j2(genjet[q2_match].px(), genjet[q2_match].py(), genjet[q2_match].pz(), genjet[q2_match].energy());
-			std::cout << "\t matched jet 2 energy = " << genjet[q2_match].energy() <<  ", dR(j2, q2) = " << j2.DeltaR(q2) << "\n";
-			double jet_2_cone = 0;
-			for (auto const& part: genpart)
-			{
-				if (part.numberOfDaughters() == 0)
-				{
-					TLorentzVector p4part(part.px(), part.py(), part.pz(), part.energy());
-					double dR = j2.DeltaR(p4part);
-					if (dR < 0.4)
-					{
-						jet_2_cone += p4part.E();
-					}
-				}
-			}
-			std::cout << "\t dR(j2, l) = " << j2.DeltaR(lep) << ", ";
-			std::cout << "jet_2_cone = " << jet_2_cone << "\n";
-			std::cout << "\t dR(j2, nu) = " << j2.DeltaR(nu) << "\n";
-		}
 		
 		if (q1_match != -1 && q2_match != -1)
 		{
-			TLorentzVector j2(genjet[q2_match].px(), genjet[q2_match].py(), genjet[q2_match].pz(), genjet[q2_match].energy());
-			TLorentzVector j1(genjet[q1_match].px(), genjet[q1_match].py(), genjet[q1_match].pz(), genjet[q1_match].energy());
-			m_file << q1.E() << ", " 
-				   << q2.E() << ", " 
-				   << q1.DeltaR(q2) << ", " 
-				   << w_had.E() << ", " 
-				   << w_lep.E() << ", " 
-				   << quark_1_cone << ", " 
-				   << quark_2_cone << ", "
-				   << j1.E() << ", "
-				   << j2.E() << "\n";
-		}
+			double r1 = genjet[q1_match].pt()/q1.Pt();
+			double r2 = genjet[q2_match].pt()/q2.Pt();
+			bool j1_mismatch = (r1 < 0.8 || r1 > 1.2);
+			bool j2_mismatch = (r2 < 0.8 || r2 > 1.2);
 
-		auto stable = FindStableParticles(genpart);
-		std::cout << "\tFound " << stable.size() << " stable particles\n";
-		auto jets = ClusterAK4(stable);
-		std::cout << "\tClustered " << jets.size() << " jets:\n";
-		for (auto& jet: jets)
-		{
-			std::cout << jet.E() << "\n";
-		}
-		std::cout << "\nBuilt-in " << genjet.size() << " jets:\n";
-		for (auto& jet: genjet)
-		{
-			std::cout << jet.energy() << "\n";
+			if (j1_mismatch || j2_mismatch)
+			{
+				std::cout << "\tq1_Pt = " << q1.Pt() << "\n";
+				std::cout << "\tq2_Pt = " << q2.Pt() << "\n";
+				std::cout << "\tbq_Pt = " << b.Pt() << "\n";
+				std::cout << "\tbbar_Pt = " << bbar.Pt() << "\n";
+				std::cout << "\tdR(q1, q2) = " << q1.DeltaR(q2) << "\n";
+				std::cout << "\tdR(q1, b) = " << q1.DeltaR(b) << "\n";
+				std::cout << "\tdR(q1, bbar) = " << q1.DeltaR(bbar) << "\n";
+				std::cout << "\tdR(q2, b) = " << q2.DeltaR(b) << "\n";
+				std::cout << "\tdR(q2, bbar) = " << q2.DeltaR(bbar) << "\n";
+				std::cout << "\tr1 = " << r1 << ", r2 = " << r2 << "\n";
+
+				auto stable = FindStableParticles(genpart);
+
+				std::cout << "\tStable particle info:\n";
+				std::cout << "\tid\tdR(q1, p)\tdR(q2, p)\tPt\n";
+				// TLorentzVector tot_stable;
+				for (auto const& [id, p4]: stable)
+				{
+					// tot_stable += p4;
+					std::cout << "\t" << id << "\t" << q1.DeltaR(p4) << "\t\t" << q2.DeltaR(p4) << "\t\t" << p4.Pt() << "\n";
+				}
+
+				// std::cout << "\tConsistency check: E(W) = " << w_had.E() << ", E(stable) = " << tot_stable.E() << "\n";
+
+				auto jets = ClusterAK4(stable);
+				std::cout << "\tnumber of stable partcles = " << stable.size() << "\n";
+				std::cout << "\tcustom_size = " << jets.size() << ", genjets_size = " << genjet.size() << "\n";
+
+				std::cout << "\tcustom jet pt: ";
+				for (auto& cj: jets)
+				{
+					std::cout << cj.Pt() << " ";
+				}
+				std::cout << "\n";
+
+				if (j1_mismatch)
+				{
+					std::cout << "\tJet 1:\n";
+					for (auto& jet: jets)
+					{
+						double dR = jet.DeltaR(q1);
+						if (dR < m_dr_thresh)
+						{
+							std::cout << "\tcustom: r = " << jet.Pt()/q1.Pt() << "\n";
+						}
+					}
+					std::cout << "\tbuilt-in: r = " << r1 << "\n";
+				}
+
+				if (j2_mismatch)
+				{
+					std::cout << "\tJet 2:\n";
+					for (auto& jet: jets)
+					{
+						double dR = jet.DeltaR(q2);
+						if (dR < m_dr_thresh)
+						{
+							std::cout << "\tcustom: r = " << jet.Pt()/q2.Pt() << "\n";
+						}
+					}
+					std::cout << "\tbuilt-in: r = " << r2 << "\n";
+				}
+			}
 		}
 	}
 }
@@ -416,12 +376,35 @@ int AODAnalyzer::Match(GENPART target, std::vector<reco::GenJet> const& genjets)
 std::vector<std::pair<int, TLorentzVector>> AODAnalyzer::FindStableParticles(reco::GenParticleCollection const& genpart)
 {
 	int sz = genpart.size();
+	std::vector<int> forbidden{12, 14, 16};
 	std::vector<std::pair<int, TLorentzVector>> res;
 	for (int i = 0; i < sz; ++i)
 	{
 		int abs_id = std::abs(genpart[i].pdgId()); 
+		// bool from_w = false;
+		// reco::Candidate const* mmother = genpart[i].mother();
+		// while (mmother)
+		// {
+		// 	if (mmother->pdgId() == m_signal[static_cast<int>(GENPART::Whad)]->pdgId())
+		// 	{
+		// 		from_w = true;
+		// 		break;
+		// 	}
+		// 	mmother = mmother->mother();
+		// }
+
+		// if (!from_w)
+		// {
+		// 	continue;
+		// }
+
+		auto it = std::find(forbidden.begin(), forbidden.end(), abs_id);
+		if (it != forbidden.end())
+		{
+			continue;
+		}
 		// if no daughters or not neutrino
-		if (genpart[i].numberOfDaughters() == 0 && (abs_id != 12 || abs_id != 14 || abs_id != 16))
+		if (genpart[i].numberOfDaughters() == 0 && genpart[i].status() == 1)
 		{
 			TLorentzVector p(genpart[i].px(), genpart[i].py(), genpart[i].pz(), genpart[i].energy());
 			int pdg_id = genpart[i].pdgId();
@@ -437,7 +420,9 @@ std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<std::pair<int, T
 	std::vector<TLorentzVector> res;
 	auto d_ij = [](TLorentzVector const& pi, TLorentzVector const& pj)
 	{
-		return std::min(1/(pi.Pt()*pi.Pt()), 1/(pj.Pt()*pj.Pt()))*(pi.DeltaR(pj)*pi.DeltaR(pj))/(0.4*0.4);
+		double dR = pi.DeltaR(pj)*pi.DeltaR(pj);
+		double min_inv_pt = std::min(1/(pi.Pt()*pi.Pt()), 1/(pj.Pt()*pj.Pt()));
+		return min_inv_pt*(dR*dR)/(0.4*0.4);
 	};
 
 	int sz = stable.size();
@@ -454,21 +439,28 @@ std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<std::pair<int, T
 
 	while (!p4.empty())
 	{
+		// if only one object is left:
+		// if it is a particle ignore it
+		// if it's a result of merging add to result
 		int cur_size = p4.size();
 		if (cur_size == 1)
 		{
-			res.push_back(p4[0]);
+			if (id[0] != 0 && p4[0].Pt() > 5)
+			{
+				res.push_back(p4[0]);
+			}
 			break;
 		}
 
+		// here at least two objects are present in the collection
 		double min_d_iB = 1/(p4[0].Pt()*p4[0].Pt());
 		int min_iB = 0;
 
 		double min_d_ij = d_ij(p4[0], p4[1]);
 		int min_i = 0;
-		int min_j = 0;
+		int min_j = 1;
 
-		for (int i = 1; i < cur_size; ++i)
+		for (int i = 0; i < cur_size; ++i)
 		{
 			double d_iB = 1/(p4[i].Pt()*p4[i].Pt());
 			if (d_iB < min_d_iB)
@@ -479,6 +471,10 @@ std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<std::pair<int, T
 
 			for (int j = i + 1; j < cur_size; ++j)
 			{
+				if (i == j)
+				{
+					continue;
+				}
 				double cur_d_ij = d_ij(p4[i], p4[j]);
 				if (cur_d_ij < min_d_ij)
 				{
@@ -489,47 +485,57 @@ std::vector<TLorentzVector> AODAnalyzer::ClusterAK4(std::vector<std::pair<int, T
 			}
 		}
 
-		std::cout << "min d_iB = " << min_d_iB 
-				  << ":\n\tat = " << min_iB << ", pdgId = " << id[min_iB] << ", pt = " << p4[min_iB].Pt() << "\n";
+		// std::cout << "min d_iB = " << min_d_iB 
+		// 		  << ":\n\tat = " << min_iB << ", pdgId = " << id[min_iB] << ", pt = " << p4[min_iB].Pt() << "\n";
 
-		std::cout << "min d_ij = " << min_d_ij
-				  << ":\n\tat (" << min_i << ", " << min_j << "), pdgId = (" << id[min_i] << ", " << id[min_j] << "), "
-				  << "pt = (" << p4[min_i].Pt() << ", " << p4[min_j].Pt() << ")\n";
+		// std::cout << "min d_ij = " << min_d_ij
+		// 		  << ":\n\tat (" << min_i << ", " << min_j << "), pdgId = (" << id[min_i] << ", " << id[min_j] << "), "
+		// 		  << "pt = (" << p4[min_i].Pt() << ", " << p4[min_j].Pt() << ")\n";
+
+		// if (std::min(min_d_iB, min_d_ij) > 0.6) break;
 
 		if (min_d_ij < min_d_iB)
 		{
-			std::cout << "\tmerge " << id[min_i] << " and " << id[min_j] << " to single jet\n\n";
+			if (min_i == min_j)
+			{
+				std::cout << "\tCOMBINING SELF!!!\n";
+			}
+
+			// std::cout << "\tcombine (pdgId, idx) = (" << id[min_i] << ", " << min_i << "), pt = " << p4[min_i].Pt() 
+			// 		  << " with (pdgId, idx) = (" << id[min_j] << ", " << min_j << "), pt = " << p4[min_j].Pt() << "\n";
 			
 			int keep = std::min(min_i, min_j);
 			int remove = std::max(min_i, min_j);
 			p4[keep] += p4[remove];
 			auto itr_p4 = p4.begin() + remove;
 			p4.erase(itr_p4);
-			id[keep] = -1;
+			id[keep] = 0;
 			auto itr_id = id.begin() + remove;
 			id.erase(itr_id);
+
+			// std::cout << "\tresult pt = " << p4[keep].Pt() << "\n";
 
 			// combine i and j to min(i, j)
 			// remove max(i, j)
 		}
 		else
 		{
-			if (p4[min_iB].E() < 25.0)
+			if (id[min_iB] != 0 || p4[min_iB].Pt() < 5)
 			{
-				std::cout << "\tdrop " << min_iB << " as energy is too small\n\n";
 				auto itr_p4 = p4.begin() + min_iB;
 				auto itr_id = id.begin() + min_iB;
 				p4.erase(itr_p4);
 				id.erase(itr_id);
 				continue;
 			}
-			std::cout << "\tdecalre " << min_iB << " as jet with energy " << p4[min_iB].E() << "\n\n";
+			// std::cout << "\tobjetct (pdgID, idx) = (" << id[min_iB] << ", " << min_iB << ") is a jet with energy " << p4[min_iB].E() << "\n";
+			// std::cout << "\tformed jet with pt = " << p4[min_iB].Pt() << "\n";
 			res.push_back(p4[min_iB]);
 			auto itr_p4 = p4.begin() + min_iB;
 			p4.erase(itr_p4);
 			auto itr_id = id.begin() + min_iB;
 			id.erase(itr_id);
-			std::cout << "==========================================\n";
+			// std::cout << "================================================================================\n";
 		}
 	}
 	return res;
